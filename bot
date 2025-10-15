@@ -1,0 +1,161 @@
+import telebot
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+
+
+TOKEN = "7628595465:AAHgUHi-smK7UE8XayKD8ms_EBTF6PsqV-4"
+
+
+bot = telebot.TeleBot(TOKEN)
+
+
+tasks = []
+completed_tasks = []
+
+
+def create_main_keyboard():
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(KeyboardButton("Добавить задачу"))
+    keyboard.add(KeyboardButton("Посмотреть задачи"))
+    keyboard.add(KeyboardButton("Отметить выполненную задачу"))
+    return keyboard
+
+
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    welcome_text = """
+ Здарова! Я бот для задач.
+
+Мои возможности:
+• Добавить задачу - сделать задачу
+• Посмотреть задачи - все задачи
+• Отметить выполненную задачу - завершение 
+
+юзай кнопки!
+    """
+    bot.send_message(
+        message.chat.id, 
+        welcome_text, 
+        reply_markup=create_main_keyboard()
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "Добавить задачу")
+def add_task_command(message):
+
+    bot.send_message(
+        message.chat.id, 
+        " Добавляй, пиши текст задачи:",
+        reply_markup=telebot.types.ReplyKeyboardRemove()  # Убираем клавиатуру для чистого ввода
+    )
+    bot.register_next_step_handler(message, save_task)
+
+
+def save_task(message):
+
+    task_id = len(tasks) + 1
+    tasks.append({
+        'id': task_id,
+        'text': message.text,
+        'user_id': message.from_user.id
+    })
+    
+    bot.send_message(
+        message.chat.id,
+        f" Задача добавлена: \"{message.text}\"",
+        reply_markup=create_main_keyboard()
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "Посмотреть задачи")
+def show_tasks_command(message):
+    user_tasks = [task for task in tasks if task['user_id'] == message.from_user.id]
+    
+    if not user_tasks:
+        bot.send_message(
+            message.chat.id, 
+            " нема задач!",
+            reply_markup=create_main_keyboard()
+        )
+        return
+    
+    tasks_text = " задачи:\n\n"
+    for task in user_tasks:
+        tasks_text += f"{task['id']}. {task['text']}\n"
+    
+    bot.send_message(
+        message.chat.id, 
+        tasks_text,
+        reply_markup=create_main_keyboard()
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "Отметить выполненную задачу")
+def complete_task_command(message):
+    user_tasks = [task for task in tasks if task['user_id'] == message.from_user.id]
+    
+    if not user_tasks:
+        bot.send_message(
+            message.chat.id, 
+            " нема задач для отметки!",
+            reply_markup=create_main_keyboard()
+        )
+        return
+    
+    tasks_text = " номер для отметки выполнения:\n\n"
+    for task in user_tasks:
+        tasks_text += f"{task['id']}. {task['text']}\n"
+    
+    tasks_text += "\nВведите номер выполненной задачи:"
+    
+    bot.send_message(
+        message.chat.id, 
+        tasks_text,
+        reply_markup=telebot.types.ReplyKeyboardRemove()  # Убираем клавиатуру для чистого ввода
+    )
+    bot.register_next_step_handler(message, process_task_completion)
+
+
+def process_task_completion(message):
+    try:
+        task_number = int(message.text)
+        user_tasks = [task for task in tasks if task['user_id'] == message.from_user.id]
+        task_to_complete = None
+        for task in user_tasks:
+            if task['id'] == task_number:
+                task_to_complete = task
+                break
+        
+        if task_to_complete:
+            tasks.remove(task_to_complete)
+            completed_tasks.append(task_to_complete)
+            bot.send_message(
+                message.chat.id,
+                f" Задача \"{task_to_complete['text']}\" отмечена как выполненная!",
+                reply_markup=create_main_keyboard()
+            )
+        else:
+            bot.send_message(
+                message, "Задача с таким номером нема!",
+                reply_markup=create_main_keyboard()
+            )
+    
+    except ValueError:
+        bot.send_message(
+            message.chat.id,
+            " ЦИФРУ (номер задачи)!",
+            reply_markup=create_main_keyboard()
+        )
+
+
+@bot.message_handler(func=lambda message: True)
+def unknown_command(message):
+    bot.send_message(
+        message.chat.id,
+        " кнопки юзай",
+        reply_markup=create_main_keyboard()
+    )
+
+
+if __name__ == '__main__':
+    print("Бот запущен")
+    bot.polling(none_stop=True)
