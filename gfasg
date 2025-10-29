@@ -1,0 +1,118 @@
+import telebot
+
+TOKEN = '7628595465:AAHgUHi-smK7UE8XayKD8ms_EBTF6PsqV-4'
+bot = telebot.TeleBot(TOKEN)
+
+teachers = {
+    'Илья': {
+        'photo': 'https://static.wikia.nocookie.net/smesharikiarhives/images/c/c1/%D0%9A%D1%80%D0%BE%D1%88_%D0%A2%D0%97.png/revision/latest?cb=20200929162518&path-prefix=ru',
+        'courses': 'Python, WEB',
+        'likes': 0,
+        'dislikes': 0,
+        'voted': []
+    },
+    'Кирилл': {
+        'photo': 'https://static.wikia.nocookie.net/smesharikiarhives/images/b/b7/%D0%81%D0%B6%D0%B8%D0%BA_%D1%82%D0%BE%D0%B2%D0%B0%D1%80%D0%BD%D1%8B%D0%B9_%D0%B7%D0%BD%D0%B0%D0%BA.png/revision/latest?cb=20200929162643&path-prefix=ru',
+        'courses': 'Roblox, Game ART',
+        'likes': 0,
+        'dislikes': 0,
+        'voted': []
+    },
+    'Маша': {
+        'photo': 'https://static.wikia.nocookie.net/smesharikiarhives/images/b/ba/%D0%9D%D1%8E%D1%88%D0%B0_%D0%A2%D0%97.png/revision/latest?cb=20200929163906&path-prefix=ru',
+        'courses': 'Scratch, WEB',
+        'likes': 0,
+        'dislikes': 0,
+        'voted': []
+    },
+    'Настя': {
+        'photo': 'https://static.wikia.nocookie.net/smesharikiarhives/images/2/24/%D0%A1%D0%BE%D0%B2%D1%83%D0%BD%D1%8C%D1%8F_%D1%82%D0%BE%D0%B2%D0%B0%D1%80%D0%BD%D1%8B%D0%B9_%D0%B7%D0%BD%D0%B0%D0%BA.png/revision/latest?cb=20200929163742&path-prefix=ru',
+        'courses': 'Scratch, Roblox',
+        'likes': 0,
+        'dislikes': 0,
+        'voted': []
+    },
+    'Егор': {
+        'photo': 'https://static.wikia.nocookie.net/smesharikiarhives/images/0/0a/%D0%9A%D0%BE%D0%BF%D0%B0%D1%82%D1%8B%D1%87_%D0%A2%D0%97.png/revision/latest?cb=20200929163704&path-prefix=ru',
+        'courses': 'Python, Game ART',
+        'likes': 0,
+        'dislikes': 0,
+        'voted': []
+    }
+}
+
+courses = {
+    'Python': ['Илья', 'Егор'],
+    'Scratch': ['Маша', 'Настя'],
+    'WEB': ['Илья', 'Маша'],
+    'Roblox': ['Кирилл', 'Настя'],
+    'Game ART': ['Егор', 'Кирилл']
+}
+
+@bot.message_handler(commands=['start'])
+def start_message(message):
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    evaluate = telebot.types.InlineKeyboardButton('Оценить преподавателя', callback_data='evaluate')
+    rating = telebot.types.InlineKeyboardButton('Рейтинг преподавателей', callback_data='rating')
+    keyboard.add(evaluate)
+    keyboard.add(rating)
+    bot.send_message(message.chat.id, 'Выберите одно из действий:', reply_markup=keyboard)
+
+@bot.callback_query_handler(lambda callback: True)
+def callback_handler(callback):
+    user_id = callback.message.chat.id
+    data = callback.data
+    if data == 'evaluate':
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        for course in courses.keys():
+            keyboard.add(telebot.types.InlineKeyboardButton(course, callback_data=course))
+        bot.send_message(user_id, 'Выберите курс:', reply_markup=keyboard)
+    elif data in courses:
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        for teacher in courses[data]:
+            keyboard.add(telebot.types.InlineKeyboardButton(teacher, callback_data=teacher))
+        bot.send_message(user_id, 'Выберите преподавателя:', reply_markup=keyboard)
+    elif data in teachers:
+        info = (
+            f'Имя преподавателя: {data}\n'
+            f'Какие курсы преподаёт: {teachers[data]["courses"]}\n'
+            f'Лайков: {teachers[data]["likes"]}, Дизлайков: {teachers[data]["dislikes"]}'
+        )
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        like = telebot.types.InlineKeyboardButton('👍', callback_data=f'like_{data}')
+        dislike = telebot.types.InlineKeyboardButton('👎', callback_data=f'dislike_{data}')
+        keyboard.add(like, dislike)
+        bot.send_photo(user_id, teachers[data]['photo'])
+        bot.send_message(user_id, info, reply_markup=keyboard)
+    elif data.startswith('like'):
+        name = data.split('_')[1]
+        if user_id in teachers[name]['voted']:
+            bot.send_message(user_id, 'Вы уже голосовали за этого преподавателя!')
+        else:
+            teachers[name]['likes'] += 1
+            teachers[name]['voted'].append(user_id)
+            bot.send_message(user_id, 'Ваш голос записан!')
+    elif data.startswith('dislike'):
+        name = data.split('_')[1]
+        if user_id in teachers[name]['voted']:
+            bot.send_message(user_id, 'Вы уже голосовали за этого преподавателя!')
+        else:
+            teachers[name]['dislikes'] += 1
+            teachers[name]['voted'].append(user_id)
+            bot.send_message(user_id, 'Ваш голос записан!')
+    elif data == 'rating':
+        rating = []
+        for name, info in teachers.items():
+            votes = info['likes'] + info['dislikes']
+            rating.append((name, (info['likes'] - info['dislikes']) / votes))
+        rating.sort(key=lambda x: -x[1])
+        result = 'ТОП-3 преподавателя школы Movavi:\n\n'
+        for i, teacher in enumerate(rating[:3]):
+            result += f'№{i + 1}: {teacher[0]} ({teacher[1]:.2f})\n'
+        bot.send_message(user_id, result)
+
+print('bot is running')
+bot.polling(
+    none_stop=True,
+    interval=1
+)
