@@ -1,0 +1,236 @@
+import telebot
+from telebot import types
+TOKEN = "7628595465:AAHgUHi-smK7UE8XayKD8ms_EBTF6PsqV-4"
+bot = telebot.TeleBot(TOKEN)
+tasks = {}
+user_states = {}
+def create_main_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(types.KeyboardButton("Добавить задачу"))
+    keyboard.add(types.KeyboardButton("Мои задачи"))
+    keyboard.add(types.KeyboardButton("Завершить задачу"))
+    keyboard.add(types.KeyboardButton("Статистика"))
+    return keyboard
+def create_categories_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    categories = ["Работа", "Дом", "Покупки", "Личное", "Здоровье", "Событие"]  
+    for i in range(0, len(categories), 2):
+        if i + 1 < len(categories):
+            keyboard.row(
+                types.InlineKeyboardButton(categories[i], callback_data=f"category_{categories[i]}"),
+                types.InlineKeyboardButton(categories[i+1], callback_data=f"category_{categories[i+1]}")
+            )
+        else:
+            keyboard.row(types.InlineKeyboardButton(categories[i], callback_data=f"category_{categories[i]}"))   
+    keyboard.row(types.InlineKeyboardButton("Без категории", callback_data="category_общее"))
+    return keyboard
+def create_time_keyboard():
+    keyboard = types.InlineKeyboardMarkup()   
+    times_quick = [
+        ("Через 5 минут", "5_min"),
+        ("Через 1 час", "1_hour"),
+        ("Через 3 часа", "3_hours"), 
+        ("Сегодня вечером", "today_evening"),
+        ("Завтра утром", "tomorrow_morning"),
+        ("Через неделю", "1_week")
+    ]   
+    for i in range(0, len(times_quick), 2):
+        if i + 1 < len(times_quick):
+            keyboard.row(
+                types.InlineKeyboardButton(times_quick[i][0], callback_data=f"time_{times_quick[i][1]}"),
+                types.InlineKeyboardButton(times_quick[i+1][0], callback_data=f"time_{times_quick[i+1][1]}")
+            )
+        else:
+            keyboard.row(types.InlineKeyboardButton(times_quick[i][0], callback_data=f"time_{times_quick[i][1]}"))   
+    return keyboard
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    user_id = message.from_user.id
+    if user_id not in tasks:
+        tasks[user_id] = []    
+    welcome_text = "Планировщик задач и напоминаний"
+    bot.send_message(
+        message.chat.id, 
+        welcome_text, 
+        reply_markup=create_main_keyboard()
+    )
+@bot.message_handler(func=lambda message: message.text == "Добавить задачу")
+def add_task_command(message):
+    user_id = message.from_user.id
+    user_states[user_id] = {'state': 'waiting_for_task'}   
+    bot.send_message(
+        message.chat.id,
+        "Введите текст задачи:",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+@bot.message_handler(func=lambda message: message.from_user.id in user_states and user_states[message.from_user.id]['state'] == 'waiting_for_task')
+def process_task_text(message):
+    user_id = message.from_user.id
+    user_states[user_id] = {
+        'state': 'waiting_for_category',
+        'task_text': message.text
+    }  
+    bot.send_message(
+        message.chat.id,
+        "Выберите категорию задачи:",
+        reply_markup=create_categories_keyboard()
+    )
+@bot.callback_query_handler(func=lambda call: call.data.startswith('category_'))
+def handle_category_selection(call):
+    user_id = call.from_user.id
+    category = call.data.replace('category_', '')  
+    if user_id in user_states and user_states[user_id]['state'] == 'waiting_for_category':
+        user_states[user_id]['category'] = category
+        user_states[user_id]['state'] = 'waiting_for_time'   
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"Категория: {category}\n\nВыберите время напоминания:",
+            reply_markup=create_time_keyboard()
+        )
+@bot.callback_query_handler(func=lambda call: call.data.startswith('time_'))
+def handle_time_selection(call):
+    user_id = call.from_user.id
+    time_option = call.data.replace('time_', '')  
+    if user_id not in user_states or user_states[user_id]['state'] != 'waiting_for_time':
+        bot.answer_callback_query(call.id, "Ошибка! Начните заново.")
+        return
+    task_data = user_states[user_id]
+    task_id = len(tasks[user_id]) + 1
+    tasks[user_id].append({
+        'id': task_id,
+        'text': task_data['task_text'],
+        'category': task_data.get('category', 'общее'),
+        'time_option': time_option,
+        'is_completed': False
+    })
+    del user_states[user_id]
+    time_display = {
+        '5_min': 'через 5 минут',
+        '1_hour': 'через 1 час',
+        '3_hours': 'через 3 часа',
+        'today_evening': 'сегодня вечером',
+        'tomorrow_morning': 'завтра утром',
+        '1_week': 'через неделю'
+    }.get(time_option, time_option)
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Задача добавлена: {task_data['task_text']}\nКатегория: {task_data.get('category', 'общее')}\nВремя: {time_display}\nID: #{task_id}"
+    )
+    bot.send_message(
+        call.message.chat.id,
+        "Выберите следующее действие:",
+        reply_markup=create_main_keyboard()
+    )
+@bot.message_handler(func=lambda message: message.text == "Мои задачи")
+def show_tasks_command(message):
+    user_id = message.from_user.id  
+    if user_id not in tasks or not tasks[user_id]:
+        bot.send_message(
+            message.chat.id,
+            "У вас нет активных задач!",
+            reply_markup=create_main_keyboard()
+        )
+        return
+    active_tasks = [task for task in tasks[user_id] if not task['is_completed']]
+    if not active_tasks:
+        bot.send_message(
+            message.chat.id,
+            "Все задачи выполнены!",
+            reply_markup=create_main_keyboard()
+        )
+        return
+    tasks_text = "Ваши активные задачи:\n\n"
+    for task in active_tasks:
+        time_display = {
+            '5_min': 'через 5 минут',
+            '1_hour': 'через 1 час',
+            '3_hours': 'через 3 часа',
+            'today_evening': 'сегодня вечером',
+            'tomorrow_morning': 'завтра утром',
+            '1_week': 'через неделю'
+        }.get(task['time_option'], task['time_option']) 
+        tasks_text += f"#{task['id']} - {task['text']}\nКатегория: {task['category']}\nВремя: {time_display}\n\n"
+    bot.send_message(
+        message.chat.id,
+        tasks_text,
+        reply_markup=create_main_keyboard()
+    )
+@bot.message_handler(func=lambda message: message.text == "Завершить задачу")
+def complete_task_command(message):
+    user_id = message.from_user.id   
+    if user_id not in tasks or not tasks[user_id]:
+        bot.send_message(
+            message.chat.id,
+            "Нет задач для завершения!",
+            reply_markup=create_main_keyboard()
+        )
+        return
+    active_tasks = [task for task in tasks[user_id] if not task['is_completed']] 
+    if not active_tasks:
+        bot.send_message(
+            message.chat.id,
+            "Все задачи уже выполнены!",
+            reply_markup=create_main_keyboard()
+        )
+        return   
+    keyboard = types.InlineKeyboardMarkup()
+    for task in active_tasks:
+        display_text = task['text'][:30] + "..." if len(task['text']) > 30 else task['text']
+        keyboard.add(types.InlineKeyboardButton(
+            f"#{task['id']} - {display_text}", 
+            callback_data=f"complete_{task['id']}"
+        ))
+    bot.send_message(
+        message.chat.id,
+        "Выберите задачу для завершения:",
+        reply_markup=keyboard
+    )
+@bot.callback_query_handler(func=lambda call: call.data.startswith('complete_'))
+def handle_task_completion(call):
+    user_id = call.from_user.id
+    task_id = int(call.data.replace('complete_', ''))
+    if user_id in tasks:
+        for task in tasks[user_id]:
+            if task['id'] == task_id:
+                task['is_completed'] = True
+                task_text = task['text']
+                break   
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"Задача завершена: {task_text}"
+        )  
+        bot.send_message(
+            call.message.chat.id,
+            "Выберите следующее действие:",
+            reply_markup=create_main_keyboard()
+        )
+@bot.message_handler(func=lambda message: message.text == "Статистика")
+def stats_command(message):
+    user_id = message.from_user.id
+    if user_id not in tasks:
+        total_tasks = 0
+        completed_tasks = 0
+        active_tasks = 0
+    else:
+        total_tasks = len(tasks[user_id])
+        completed_tasks = len([task for task in tasks[user_id] if task['is_completed']])
+        active_tasks = total_tasks - completed_tasks
+    stats_text = f"Статистика:\n\nВсего задач: {total_tasks}\nВыполнено: {completed_tasks}\nАктивных: {active_tasks}"
+    bot.send_message(
+        message.chat.id,
+        stats_text,
+        reply_markup=create_main_keyboard()
+    )
+@bot.message_handler(func=lambda message: True)
+def unknown_command(message):
+    bot.send_message(
+        message.chat.id,
+        "Используйте кнопки для навигации",
+        reply_markup=create_main_keyboard()
+    )
+if __name__ == '__main__':
+    print("Бот запущен")
+    bot.polling(none_stop=True)
